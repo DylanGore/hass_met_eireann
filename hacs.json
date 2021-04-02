@@ -1,5 +1,5 @@
 {
-    "name": "Met Éireann",
-    "country": "IE",
-    "iot_class": "Cloud Polling"
+  "name": "Met Éireann",
+  "country": "IE",
+  "iot_class": "Cloud Polling"
 }
