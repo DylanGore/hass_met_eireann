@@ -1,11 +1,8 @@
 """Support for Met Éireann weather service."""
 import logging
 
-import voluptuous as vol
-
-from homeassistant.components.weather import PLATFORM_SCHEMA, WeatherEntity
+from homeassistant.components.weather import WeatherEntity
 from homeassistant.const import (
-    CONF_ELEVATION,
     CONF_LATITUDE,
     CONF_LONGITUDE,
     CONF_NAME,
@@ -15,28 +12,13 @@ from homeassistant.const import (
     PRESSURE_INHG,
     TEMP_CELSIUS,
 )
-from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from homeassistant.util.distance import convert as convert_distance
 from homeassistant.util.pressure import convert as convert_pressure
 
-from .const import ATTRIBUTION, CONDITION_MAP, CONF_TRACK_HOME, DEFAULT_NAME, DOMAIN
+from .const import ATTRIBUTION, CONDITION_MAP, DEFAULT_NAME, DOMAIN
 
 _LOGGER = logging.getLogger(__name__)
-
-
-PLATFORM_SCHEMA = PLATFORM_SCHEMA.extend(
-    {
-        vol.Optional(CONF_NAME, default=DEFAULT_NAME): cv.string,
-        vol.Inclusive(
-            CONF_LATITUDE, "coordinates", "Latitude and longitude must exist together"
-        ): cv.latitude,
-        vol.Inclusive(
-            CONF_LONGITUDE, "coordinates", "Latitude and longitude must exist together"
-        ): cv.longitude,
-        vol.Optional(CONF_ELEVATION): int,
-    }
-)
 
 
 def format_condition(condition: str):
@@ -75,16 +57,8 @@ class MetEireannWeather(CoordinatorEntity, WeatherEntity):
         self._name_appendix = "-hourly" if hourly else ""
 
     @property
-    def track_home(self):
-        """Return if we are tracking home."""
-        return self._config.get(CONF_TRACK_HOME, False)
-
-    @property
     def unique_id(self):
         """Return unique ID."""
-        if self.track_home:
-            return f"home{self._name_appendix}"
-
         return f"{self._config[CONF_LATITUDE]}-{self._config[CONF_LONGITUDE]}{self._name_appendix}"
 
     @property
@@ -94,9 +68,6 @@ class MetEireannWeather(CoordinatorEntity, WeatherEntity):
 
         if name is not None:
             return f"{name}{self._name_appendix}"
-
-        if self.track_home:
-            return f"{self.hass.config.location_name}{self._name_appendix}"
 
         return f"{DEFAULT_NAME}{self._name_appendix}"
 
@@ -166,3 +137,14 @@ class MetEireannWeather(CoordinatorEntity, WeatherEntity):
             if "condition" in item:
                 item["condition"] = format_condition(item["condition"])
         return self.coordinator.data.daily_forecast
+
+    @property
+    def device_info(self):
+        """Device info."""
+        return {
+            "identifiers": {(DOMAIN,)},
+            "manufacturer": "Met Éireann",
+            "model": "Forecast",
+            "default_name": "Forecast",
+            "entry_type": "service",
+        }

@@ -1,7 +1,6 @@
 """The met_eireann component."""
 from datetime import timedelta
 import logging
-from random import randrange
 
 import meteireann
 
@@ -9,20 +8,20 @@ from homeassistant.const import (
     CONF_ELEVATION,
     CONF_LATITUDE,
     CONF_LONGITUDE,
-    EVENT_CORE_CONFIG_UPDATE,
     LENGTH_FEET,
     LENGTH_METERS,
 )
 from homeassistant.core import Config, HomeAssistant
-from homeassistant.exceptions import ConfigEntryNotReady
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 from homeassistant.util.distance import convert as convert_distance
 import homeassistant.util.dt as dt_util
 
-from .const import CONF_TRACK_HOME, DOMAIN
+from .const import DOMAIN
 
 _LOGGER = logging.getLogger(__name__)
+
+UPDATE_INTERVAL = timedelta(minutes=60)
 
 
 async def async_setup(hass: HomeAssistant, config: Config) -> bool:
@@ -33,14 +32,27 @@ async def async_setup(hass: HomeAssistant, config: Config) -> bool:
 
 async def async_setup_entry(hass, config_entry):
     """Set up Met Éireann as config entry."""
-    coordinator = MetEireannDataUpdateCoordinator(hass, config_entry)
+
+    weather_data = MetEireannWeatherData(
+        hass, config_entry.data, hass.config.units.is_metric
+    )
+    weather_data.init_data()
+
+    async def _async_update_data():
+        """Fetch data from Met Éireann."""
+        try:
+            return await weather_data.fetch_data()
+        except Exception as err:
+            raise UpdateFailed(f"Update failed: {err}") from err
+
+    coordinator = DataUpdateCoordinator(
+        hass,
+        _LOGGER,
+        name=DOMAIN,
+        update_method=_async_update_data,
+        update_interval=UPDATE_INTERVAL,
+    )
     await coordinator.async_refresh()
-
-    if not coordinator.last_update_success:
-        raise ConfigEntryNotReady
-
-    if config_entry.data.get(CONF_TRACK_HOME, False):
-        coordinator.track_home()
 
     hass.data[DOMAIN][config_entry.entry_id] = coordinator
 
@@ -54,53 +66,9 @@ async def async_setup_entry(hass, config_entry):
 async def async_unload_entry(hass, config_entry):
     """Unload a config entry."""
     await hass.config_entries.async_forward_entry_unload(config_entry, "weather")
-    hass.data[DOMAIN][config_entry.entry_id].untrack_home()
     hass.data[DOMAIN].pop(config_entry.entry_id)
 
     return True
-
-
-class MetEireannDataUpdateCoordinator(DataUpdateCoordinator):
-    """Class to manage fetching Met Éireann data."""
-
-    def __init__(self, hass, config_entry):
-        """Initialize global Met Éireann data updater."""
-        self._unsub_track_home = None
-        self.weather = MetEireannWeatherData(
-            hass, config_entry.data, hass.config.units.is_metric
-        )
-        self.weather.init_data()
-
-        update_interval = timedelta(minutes=randrange(55, 65))
-
-        super().__init__(hass, _LOGGER, name=DOMAIN, update_interval=update_interval)
-
-    async def _async_update_data(self):
-        """Fetch data from Met Éireann."""
-        try:
-            return await self.weather.fetch_data()
-        except Exception as err:
-            raise UpdateFailed(f"Update failed: {err}") from err
-
-    def track_home(self):
-        """Start tracking changes to HA home setting."""
-        if self._unsub_track_home:
-            return
-
-        async def _async_update_weather_data(_event=None):
-            """Update weather data."""
-            self.weather.init_data()
-            await self.async_refresh()
-
-        self._unsub_track_home = self.hass.bus.async_listen(
-            EVENT_CORE_CONFIG_UPDATE, _async_update_weather_data
-        )
-
-    def untrack_home(self):
-        """Stop tracking changes to HA home setting."""
-        if self._unsub_track_home:
-            self._unsub_track_home()
-            self._unsub_track_home = None
 
 
 class MetEireannWeatherData:
@@ -118,14 +86,9 @@ class MetEireannWeatherData:
 
     def init_data(self):
         """Weather data inialization - get the coordinates."""
-        if self._config.get(CONF_TRACK_HOME, False):
-            latitude = self.hass.config.latitude
-            longitude = self.hass.config.longitude
-            elevation = self.hass.config.elevation
-        else:
-            latitude = self._config[CONF_LATITUDE]
-            longitude = self._config[CONF_LONGITUDE]
-            elevation = self._config[CONF_ELEVATION]
+        latitude = self._config[CONF_LATITUDE]
+        longitude = self._config[CONF_LONGITUDE]
+        elevation = self._config[CONF_ELEVATION]
 
         if not self._is_metric:
             elevation = int(
