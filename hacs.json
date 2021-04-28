@@ -1,6 +1,6 @@
 {
   "name": "Met Éireann",
   "country": "IE",
-  "iot_class": "cloud_polling",
+  "iot_class": "Cloud Polling",
   "render_readme": true
 }
